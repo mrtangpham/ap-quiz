@@ -1,4 +1,5 @@
-import { useNavigate, useState } from "react";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import "/src/styles.css";
 
 export default function Home() {
@@ -11,7 +12,6 @@ export default function Home() {
     const nick = nickname.trim();
     const code = roomCode.trim();
     if (!nick || !code) return;
-    // Lưu tạm vào localStorage để dùng ở các bước sau
     localStorage.setItem("apq:nickname", nick);
     navigate(`/play/${encodeURIComponent(code)}`);
   };
