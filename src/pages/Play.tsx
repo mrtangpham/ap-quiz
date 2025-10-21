@@ -11,14 +11,10 @@ function useRoomsSubscription(roomCode: string, onChange: (r: Room) => void) {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "rooms", filter: `room_code=eq.${roomCode}` },
-        (payload) => {
-          if (payload.new) onChange(payload.new as Room);
-        }
+        (payload) => { if (payload.new) onChange(payload.new as Room); }
       )
       .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [roomCode, onChange]);
 }
 
@@ -27,10 +23,7 @@ export default function Play() {
   const [nickname] = useState<string>(() => localStorage.getItem("apq:nickname") ?? "Khách");
   const [clientId] = useState<UUID>(() => {
     let id = localStorage.getItem("apq:client_id");
-    if (!id) {
-      id = crypto.randomUUID();
-      localStorage.setItem("apq:client_id", id);
-    }
+    if (!id) { id = crypto.randomUUID(); localStorage.setItem("apq:client_id", id); }
     return id as UUID;
   });
 
@@ -43,6 +36,7 @@ export default function Play() {
   const [answering, setAnswering] = useState(false);
   const timerRef = useRef<number | null>(null);
 
+  // Load room & join
   useEffect(() => {
     (async () => {
       const { data: r, error: er } = await supabase
@@ -50,10 +44,7 @@ export default function Play() {
         .select("*")
         .eq("room_code", roomCode)
         .single();
-      if (er || !r) {
-        alert("Không tìm thấy phòng hoặc phòng đã kết thúc");
-        return;
-      }
+      if (er || !r) { alert("Không tìm thấy phòng hoặc phòng đã kết thúc"); return; }
       setRoom(r as Room);
 
       const { data: p, error: ep } = await supabase.rpc("join_room", {
@@ -61,29 +52,24 @@ export default function Play() {
         p_nickname: nickname,
         p_client_id: clientId,
       });
-      if (ep) {
-        alert("Join phòng thất bại: " + ep.message);
-        return;
-      }
-      setParticipant(p as Participant);
+      if (ep) { console.warn(ep); /* có thể đã join trước đó */ }
+      if (p) setParticipant(p as Participant);
     })();
   }, [roomCode, nickname, clientId]);
 
+  // Subscribe rooms
   useRoomsSubscription(roomCode, (r) => setRoom(r));
 
+  // Tải câu hỏi + options + setup timer mỗi khi room thay đổi câu / startAt
   useEffect(() => {
     (async () => {
-      if (!room?.current_question_id) {
-        setQuestion(null);
-        setOptions([]);
-        setRemainingMs(0);
-        setSelectedOption(null);
-        if (timerRef.current) {
-          window.clearInterval(timerRef.current);
-          timerRef.current = null;
-        }
+      if (!room?.current_question_id || room.status !== "running") {
+        setQuestion(null); setOptions([]); setRemainingMs(0); setSelectedOption(null);
+        if (timerRef.current) { window.clearInterval(timerRef.current); timerRef.current = null; }
         return;
       }
+
+      // Load question
       const { data: q, error: eq } = await supabase
         .from("questions")
         .select("id, quiz_id, order, content, time_limit_sec")
@@ -92,6 +78,7 @@ export default function Play() {
       if (eq) return;
       setQuestion(q as Question);
 
+      // Load options
       const { data: opts, error: eo } = await supabase
         .from("options")
         .select("*")
@@ -99,10 +86,8 @@ export default function Play() {
         .order("label", { ascending: true });
       if (!eo) setOptions(opts as Option[]);
 
-      if (timerRef.current) {
-        window.clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      // Timer — tính từ question_start_at
+      if (timerRef.current) { window.clearInterval(timerRef.current); timerRef.current = null; }
       const startAt = room.question_start_at ? new Date(room.question_start_at).getTime() : Date.now();
       const total = (q as Question).time_limit_sec * 1000;
 
@@ -111,28 +96,22 @@ export default function Play() {
         const elapsed = now - startAt;
         const remain = Math.max(0, total - elapsed);
         setRemainingMs(remain);
-        if (remain <= 0 && timerRef.current) {
-          window.clearInterval(timerRef.current);
-          timerRef.current = null;
-        }
+        if (remain <= 0 && timerRef.current) { window.clearInterval(timerRef.current); timerRef.current = null; }
       };
+      setSelectedOption(null);
       tick();
       timerRef.current = window.setInterval(tick, 200);
-      setSelectedOption(null);
     })();
-  }, [room?.current_question_id, room?.question_start_at]);
+  // Theo dõi đồng thời: id câu, thời điểm start, và order (đảm bảo nhảy câu dù id không kịp đổi do cache)
+  }, [room?.current_question_id, room?.question_start_at, room?.current_question_order, room?.status]);
 
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) window.clearInterval(timerRef.current);
-    };
-  }, []);
+  useEffect(() => () => { if (timerRef.current) window.clearInterval(timerRef.current); }, []);
 
   const secondsLeft = useMemo(() => Math.ceil(remainingMs / 1000), [remainingMs]);
 
   const handleSubmit = async (optionId: UUID) => {
     if (!participant || !room || !question) return;
-    if (answering) return;
+    if (answering || secondsLeft <= 0) return;
     setAnswering(true);
     setSelectedOption(optionId);
     try {
@@ -144,9 +123,7 @@ export default function Play() {
         p_option_id: optionId,
         p_latency_ms: Math.max(0, latency),
       });
-      if (error) {
-        alert("Gửi đáp án lỗi: " + error.message);
-      }
+      if (error) alert("Gửi đáp án lỗi: " + error.message);
     } finally {
       setAnswering(false);
     }
@@ -158,7 +135,7 @@ export default function Play() {
         <h1>Phòng: {roomCode}</h1>
         <p>Xin chào <strong>{nickname}</strong></p>
 
-        {room && room.status === "waiting" && (
+        {(!room || room.status === "waiting") && (
           <div className="card" style={{ background: "#f1f5f9" }}>
             <h3>Đang chờ Admin bắt đầu…</h3>
             <p>Khi Admin phát câu hỏi, màn hình sẽ hiển thị tự động.</p>
