@@ -1,0 +1,13 @@
+{
+  "name": "AP-Quiz — Bệnh viện An Phước",
+  "short_name": "AP-Quiz",
+  "description": "Ứng dụng PWA thi trắc nghiệm realtime cho lớp học ≤100 người.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0ea5e9",
+  "theme_color": "#0ea5e9",
+  "icons": [
+    { "src": "/logo-placeholder.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
