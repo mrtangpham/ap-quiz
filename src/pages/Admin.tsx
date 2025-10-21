@@ -16,7 +16,9 @@ function useRoomsSubscription(roomCode: string | null, onChange: (r: Room) => vo
         }
       )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [roomCode, onChange]);
 }
 
@@ -47,7 +49,10 @@ export default function Admin() {
         .from("quizzes")
         .select("*")
         .order("created_at", { ascending: false });
-      if (error) { alert("Lỗi tải quizzes: " + error.message); return; }
+      if (error) {
+        alert("Lỗi tải quizzes: " + error.message);
+        return;
+      }
       setQuizzes(data as Quiz[]);
       if (data && data[0] && !selectedQuiz) setSelectedQuiz(data[0].id);
     })();
@@ -56,13 +61,20 @@ export default function Admin() {
   // Tải câu hỏi của quiz + thống kê (số câu, max points)
   useEffect(() => {
     (async () => {
-      if (!selectedQuiz) { setQuestions([]); setQuizStats({ count: 0, maxPoints: 0 }); return; }
+      if (!selectedQuiz) {
+        setQuestions([]);
+        setQuizStats({ count: 0, maxPoints: 0 });
+        return;
+      }
       const { data, error } = await supabase
         .from("questions")
         .select("id, quiz_id, order, content, time_limit_sec")
         .eq("quiz_id", selectedQuiz)
         .order("order", { ascending: true });
-      if (error) { alert("Lỗi tải câu hỏi: " + error.message); return; }
+      if (error) {
+        alert("Lỗi tải câu hỏi: " + error.message);
+        return;
+      }
       const list = data as Question[];
       setQuestions(list);
       setQuizStats({ count: list.length, maxPoints: list.length * 10 }); // mỗi câu tối đa 10đ
@@ -71,7 +83,9 @@ export default function Admin() {
 
   // Subscribe rooms
   const subCode = (room?.room_code ?? roomCode) || null;
-  useRoomsSubscription(subCode, (r) => { setRoom(r); });
+  useRoomsSubscription(subCode, (r) => {
+    setRoom(r);
+  });
 
   // Khi room thay đổi -> tải question hiện tại (nếu có), và refresh tiến trình/leaderboard
   useEffect(() => {
@@ -79,9 +93,7 @@ export default function Admin() {
       if (!room?.current_question_id) {
         setCurrentQuestion(null);
         setAnswersCountCurrent(0);
-        // refresh participants cho phòng (đang mở)
         if (room?.id) await refreshParticipants(room.id);
-        // refresh leaderboard cho phòng
         if (room?.id) await refreshLeaderboard(room.id);
         return;
       }
@@ -110,7 +122,9 @@ export default function Admin() {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "scores", filter: `room_id=eq.${room.id}` },
-        async () => { await refreshLeaderboard(room.id!); }
+        async () => {
+          await refreshLeaderboard(room.id!);
+        }
       )
       .subscribe();
 
@@ -163,41 +177,70 @@ export default function Admin() {
   // ───────────────────────────────────────────────────────────
   // Actions
   const fetchRoomByCode = async () => {
-    if (!roomCode.trim()) { alert("Nhập room code"); return; }
+    if (!roomCode.trim()) {
+      alert("Nhập room code");
+      return;
+    }
     const { data, error } = await supabase.from("rooms").select("*").eq("room_code", roomCode.trim()).single();
-    if (error) { alert("Không tìm thấy phòng. Hãy mở phòng trước."); setRoom(null); return; }
+    if (error) {
+      alert("Không tìm thấy phòng. Hãy mở phòng trước.");
+      setRoom(null);
+      return;
+    }
     setRoom(data as Room);
   };
 
   const handleOpenRoom = async () => {
     const code = roomCode.trim();
-    if (!selectedQuiz) { alert("Chọn một bộ đề"); return; }
-    if (!code) { alert("Nhập room code"); return; }
+    if (!selectedQuiz) {
+      alert("Chọn một bộ đề");
+      return;
+    }
+    if (!code) {
+      alert("Nhập room code");
+      return;
+    }
     const secret = adminSecret.trim();
-    if (!secret) { alert("Nhập admin secret"); return; }
+    if (!secret) {
+      alert("Nhập admin secret");
+      return;
+    }
 
     const { data, error } = await supabase.rpc("admin_open_room", {
       p_quiz_id: selectedQuiz,
       p_room_code: code,
       p_admin_secret: secret,
     });
-    if (error) { alert("Lỗi mở phòng: " + error.message); return; }
+    if (error) {
+      alert("Lỗi mở phòng: " + error.message);
+      return;
+    }
     setRoom(data as Room);
     nextOrderRef.current = 1;
     alert(`Đã mở phòng ${code}.`);
+
+    // ✅ Mở trang điều khiển riêng trong tab mới
+    const url = `/control/${encodeURIComponent(code)}`;
+    window.open(url, "_blank");
   };
 
   const handleStartQuestion = async (order?: number) => {
     const code = room?.room_code || roomCode.trim();
     const secret = adminSecret.trim();
-    if (!code || !secret) { alert("Thiếu room code / admin secret"); return; }
+    if (!code || !secret) {
+      alert("Thiếu room code / admin secret");
+      return;
+    }
     const qOrder = order ?? nextOrderRef.current;
     const { data, error } = await supabase.rpc("admin_start_question", {
       p_room_code: code,
       p_admin_secret: secret,
       p_question_order: qOrder,
     });
-    if (error) { alert("Lỗi start question: " + error.message); return; }
+    if (error) {
+      alert("Lỗi start question: " + error.message);
+      return;
+    }
     setRoom(data as Room);
     nextOrderRef.current = qOrder;
   };
@@ -211,12 +254,18 @@ export default function Admin() {
   const handleEnd = async () => {
     const code = room?.room_code || roomCode.trim();
     const secret = adminSecret.trim();
-    if (!code || !secret) { alert("Thiếu room code / admin secret"); return; }
+    if (!code || !secret) {
+      alert("Thiếu room code / admin secret");
+      return;
+    }
     const { data, error } = await supabase.rpc("admin_end_game", {
       p_room_code: code,
       p_admin_secret: secret,
     });
-    if (error) { alert("Lỗi end game: " + error.message); return; }
+    if (error) {
+      alert("Lỗi end game: " + error.message);
+      return;
+    }
     setRoom(data as Room);
     alert("Đã kết thúc game.");
   };
@@ -230,9 +279,11 @@ export default function Admin() {
       .from("questions")
       .update({ time_limit_sec: newVal })
       .eq("id", q.id);
-    if (error) { alert("Sửa thời gian lỗi: " + error.message); return; }
-    // refresh local
-    setQuestions(prev => prev.map(x => x.id === q.id ? { ...x, time_limit_sec: newVal } : x));
+    if (error) {
+      alert("Sửa thời gian lỗi: " + error.message);
+      return;
+    }
+    setQuestions((prev) => prev.map((x) => (x.id === q.id ? { ...x, time_limit_sec: newVal } : x)));
     if (currentQuestion?.id === q.id) setCurrentQuestion({ ...q, time_limit_sec: newVal });
     alert(`Đã cập nhật thời gian câu ${q.order} = ${newVal}s`);
   };
@@ -240,7 +291,9 @@ export default function Admin() {
   // UI helpers
   const roomInfo = useMemo(() => {
     if (!room) return "Chưa có phòng";
-    return `Phòng ${room.room_code} — Trạng thái: ${room.status} — Câu hiện tại: ${room.current_question_order ?? "-"}`;
+    return `Phòng ${room.room_code} — Trạng thái: ${room.status} — Câu hiện tại: ${
+      room.current_question_order ?? "-"
+    }`;
   }, [room]);
 
   return (
@@ -252,14 +305,26 @@ export default function Admin() {
           {/* 1) Bộ đề + thống kê */}
           <div className="card" style={{ background: "#f8fafc" }}>
             <h3>1) Chọn bộ đề</h3>
-            <select className="select" value={selectedQuiz} onChange={(e) => setSelectedQuiz(e.target.value as UUID)}>
-              {quizzes.map((q) => (<option key={q.id} value={q.id}>{q.title}</option>))}
+            <select
+              className="select"
+              value={selectedQuiz}
+              onChange={(e) => setSelectedQuiz(e.target.value as UUID)}
+            >
+              {quizzes.map((q) => (
+                <option key={q.id} value={q.id}>
+                  {q.title}
+                </option>
+              ))}
             </select>
 
             <div className="card" style={{ marginTop: 12 }}>
               <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                <div><strong>Số câu:</strong> {quizStats.count}</div>
-                <div><strong>Tổng điểm tối đa:</strong> {quizStats.maxPoints}</div>
+                <div>
+                  <strong>Số câu:</strong> {quizStats.count}
+                </div>
+                <div>
+                  <strong>Tổng điểm tối đa:</strong> {quizStats.maxPoints}
+                </div>
               </div>
             </div>
 
@@ -267,12 +332,23 @@ export default function Admin() {
               <h4>Danh sách câu hỏi (chỉnh được thời gian 10–20s)</h4>
               {questions.length === 0 && <p>Chưa có câu hỏi.</p>}
               <ol>
-                {questions.map(q => (
+                {questions.map((q) => (
                   <li key={q.id} style={{ margin: "6px 0" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <div style={{ minWidth: 60 }}><strong>Câu {q.order}</strong></div>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div style={{ minWidth: 60 }}>
+                        <strong>Câu {q.order}</strong>
+                      </div>
                       <div style={{ color: "#475569" }}>({q.time_limit_sec}s)</div>
-                      <button className="btn" onClick={() => handleStartQuestion(q.order)}>Phát câu này</button>
+                      <button className="btn" onClick={() => handleStartQuestion(q.order)}>
+                        Phát câu này
+                      </button>
                       <label style={{ marginLeft: 8 }}>
                         Thời gian:
                         <input
@@ -291,7 +367,9 @@ export default function Admin() {
                   </li>
                 ))}
               </ol>
-              <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>* Sửa ô thời gian rồi rời chuột khỏi ô (blur) để lưu.</div>
+              <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>
+                * Sửa ô thời gian rồi rời chuột khỏi ô (blur) để lưu.
+              </div>
             </div>
           </div>
 
@@ -299,16 +377,39 @@ export default function Admin() {
           <div className="card" style={{ background: "#f8fafc" }}>
             <h3>2) Mở phòng</h3>
             <div className="stack">
-              <input className="input" placeholder="Room code (VD: AP2025)" value={roomCode} onChange={(e) => setRoomCode(e.target.value)} />
-              <input className="input" placeholder="Admin secret (tự đặt)" value={adminSecret} onChange={(e) => setAdminSecret(e.target.value)} />
+              <input
+                className="input"
+                placeholder="Room code (VD: AP2025)"
+                value={roomCode}
+                onChange={(e) => setRoomCode(e.target.value)}
+              />
+              <input
+                className="input"
+                placeholder="Admin secret (tự đặt)"
+                value={adminSecret}
+                onChange={(e) => setAdminSecret(e.target.value)}
+              />
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button className="btn" onClick={handleOpenRoom}>Mở phòng</button>
-                <button className="btn" onClick={fetchRoomByCode}>Tải trạng thái</button>
-                <a className="btn" href={`/leaderboard/${encodeURIComponent(roomCode || room?.room_code || "")}`} target="_blank">
+                <button className="btn" onClick={handleOpenRoom}>
+                  Mở phòng
+                </button>
+                <button className="btn" onClick={fetchRoomByCode}>
+                  Tải trạng thái
+                </button>
+                <a
+                  className="btn"
+                  href={`/leaderboard/${encodeURIComponent(
+                    roomCode || room?.room_code || ""
+                  )}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   Mở Leaderboard (tab mới)
                 </a>
               </div>
-              <div><strong>Trạng thái:</strong> {roomInfo}</div>
+              <div>
+                <strong>Trạng thái:</strong> {roomInfo}
+              </div>
             </div>
 
             {/* Tiến trình hiện tại */}
@@ -316,8 +417,13 @@ export default function Admin() {
               <div className="card" style={{ marginTop: 12 }}>
                 <h4>Tiến trình phòng</h4>
                 <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                  <div><strong>Số người tham gia:</strong> {participantsCount}</div>
-                  <div><strong>Đã trả lời câu hiện tại:</strong> {answersCountCurrent}/{participantsCount}</div>
+                  <div>
+                    <strong>Số người tham gia:</strong> {participantsCount}
+                  </div>
+                  <div>
+                    <strong>Đã trả lời câu hiện tại:</strong>{" "}
+                    {answersCountCurrent}/{participantsCount}
+                  </div>
                 </div>
               </div>
             )}
@@ -327,13 +433,22 @@ export default function Admin() {
           <div className="card" style={{ background: "#eef2ff" }}>
             <h3>3) Điều khiển nhanh</h3>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="btn" onClick={() => handleStartQuestion(1)}>Bắt đầu từ câu 1</button>
-              <button className="btn" onClick={handleNext}>Câu tiếp theo</button>
-              <button className="btn" onClick={handleEnd}>Kết thúc</button>
+              <button className="btn" onClick={() => handleStartQuestion(1)}>
+                Bắt đầu từ câu 1
+              </button>
+              <button className="btn" onClick={handleNext}>
+                Câu tiếp theo
+              </button>
+              <button className="btn" onClick={handleEnd}>
+                Kết thúc
+              </button>
             </div>
             {currentQuestion && (
               <div className="card" style={{ marginTop: 12 }}>
-                <div><strong>Câu {currentQuestion.order}</strong> — Thời gian: {currentQuestion.time_limit_sec}s</div>
+                <div>
+                  <strong>Câu {currentQuestion.order}</strong> — Thời gian:{" "}
+                  {currentQuestion.time_limit_sec}s
+                </div>
                 <div>{currentQuestion.content}</div>
               </div>
             )}
@@ -354,7 +469,11 @@ export default function Admin() {
                     </tr>
                   </thead>
                   <tbody>
-                    {leaderboard.length === 0 && <tr><td colSpan={3}>Chưa có điểm.</td></tr>}
+                    {leaderboard.length === 0 && (
+                      <tr>
+                        <td colSpan={3}>Chưa có điểm.</td>
+                      </tr>
+                    )}
                     {leaderboard.map((r) => (
                       <tr key={r.participant_id}>
                         <td>{r.rank}</td>
@@ -366,7 +485,9 @@ export default function Admin() {
                 </table>
               </div>
             )}
-            <div style={{ fontSize: 12, color: "#64748b" }}>* Bảng này tự cập nhật khi có điểm mới.</div>
+            <div style={{ fontSize: 12, color: "#64748b" }}>
+              * Bảng này tự cập nhật khi có điểm mới.
+            </div>
           </div>
         </div>
       </div>

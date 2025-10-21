@@ -35,32 +35,41 @@ export default function Play() {
   const [selectedOption, setSelectedOption] = useState<UUID | null>(null);
   const [answering, setAnswering] = useState(false);
   const timerRef = useRef<number | null>(null);
+  const pollRef = useRef<number | null>(null);
 
-  // Load room & join
-  useEffect(() => {
-    (async () => {
-      const { data: r, error: er } = await supabase
-        .from("rooms")
-        .select("*")
-        .eq("room_code", roomCode)
-        .single();
-      if (er || !r) { alert("Không tìm thấy phòng hoặc phòng đã kết thúc"); return; }
-      setRoom(r as Room);
-
-      const { data: p, error: ep } = await supabase.rpc("join_room", {
-        p_room_code: roomCode,
-        p_nickname: nickname,
-        p_client_id: clientId,
-      });
-      if (ep) { console.warn(ep); /* có thể đã join trước đó */ }
-      if (p) setParticipant(p as Participant);
-    })();
-  }, [roomCode, nickname, clientId]);
-
-  // Subscribe rooms
+  // 1) Subscribe rooms NGAY LẬP TỨC để kịp bắt sự kiện "bắt đầu câu 1"
   useRoomsSubscription(roomCode, (r) => setRoom(r));
 
-  // Tải câu hỏi + options + setup timer mỗi khi room thay đổi câu / startAt
+  // 2) Tải room hiện tại & join
+  useEffect(() => {
+    (async () => {
+      const { data: r } = await supabase.from("rooms").select("*").eq("room_code", roomCode).single();
+      if (r) setRoom(r as Room);
+
+      // Join (idempotent — nếu đã join trước đó, RPC có thể báo lỗi; ta bỏ qua)
+      const { data: p } = await supabase.rpc("join_room", {
+        p_room_code: roomCode, p_nickname: nickname, p_client_id: clientId
+      });
+      if (p) setParticipant(p as Participant);
+    })();
+
+    // Polling nhẹ: trong 20s đầu, mỗi 1s refetch room 1 lần (phòng khi socket bị block)
+    pollRef.current = window.setInterval(async () => {
+      const { data: r } = await supabase.from("rooms").select("*").eq("room_code", roomCode).single();
+      if (r) setRoom(r as Room);
+    }, 1000);
+    // Tự tắt polling sau 20s
+    const stop = window.setTimeout(() => {
+      if (pollRef.current) { window.clearInterval(pollRef.current); pollRef.current = null; }
+    }, 20000);
+
+    return () => {
+      if (pollRef.current) window.clearInterval(pollRef.current);
+      window.clearTimeout(stop);
+    };
+  }, [roomCode, nickname, clientId]);
+
+  // 3) Khi room đổi → tải câu/option + setup timer
   useEffect(() => {
     (async () => {
       if (!room?.current_question_id || room.status !== "running") {
@@ -70,23 +79,21 @@ export default function Play() {
       }
 
       // Load question
-      const { data: q, error: eq } = await supabase
+      const { data: q } = await supabase
         .from("questions")
         .select("id, quiz_id, order, content, time_limit_sec")
-        .eq("id", room.current_question_id)
-        .single();
-      if (eq) return;
+        .eq("id", room.current_question_id).single();
+      if (!q) return;
       setQuestion(q as Question);
 
       // Load options
-      const { data: opts, error: eo } = await supabase
-        .from("options")
-        .select("*")
+      const { data: opts } = await supabase
+        .from("options").select("*")
         .eq("question_id", room.current_question_id)
         .order("label", { ascending: true });
-      if (!eo) setOptions(opts as Option[]);
+      setOptions((opts || []) as Option[]);
 
-      // Timer — tính từ question_start_at
+      // Timer theo question_start_at
       if (timerRef.current) { window.clearInterval(timerRef.current); timerRef.current = null; }
       const startAt = room.question_start_at ? new Date(room.question_start_at).getTime() : Date.now();
       const total = (q as Question).time_limit_sec * 1000;
@@ -102,7 +109,6 @@ export default function Play() {
       tick();
       timerRef.current = window.setInterval(tick, 200);
     })();
-  // Theo dõi đồng thời: id câu, thời điểm start, và order (đảm bảo nhảy câu dù id không kịp đổi do cache)
   }, [room?.current_question_id, room?.question_start_at, room?.current_question_order, room?.status]);
 
   useEffect(() => () => { if (timerRef.current) window.clearInterval(timerRef.current); }, []);
@@ -116,14 +122,13 @@ export default function Play() {
     setSelectedOption(optionId);
     try {
       const latency = question.time_limit_sec * 1000 - remainingMs;
-      const { error } = await supabase.rpc("submit_answer", {
+      await supabase.rpc("submit_answer", {
         p_room_code: room.room_code,
         p_participant_id: participant.id,
         p_question_id: question.id,
         p_option_id: optionId,
         p_latency_ms: Math.max(0, latency),
       });
-      if (error) alert("Gửi đáp án lỗi: " + error.message);
     } finally {
       setAnswering(false);
     }
